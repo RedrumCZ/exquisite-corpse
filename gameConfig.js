@@ -1,30 +1,27 @@
 // gameConfig.js
 // Single source of truth for all game content.
-// Commentary arrays are the "funny guide" hook — add/edit freely.
+// 5 phases each, structured for grammatical correctness in both languages.
 
 export const gameConfig = {
   cs: {
+    // ── 5 phases, Czech nominative-first model ────────────────────────────
+    // Result shape: [Podmět] + [Předmět] + [Sloveso] + [Místo] + [Doplněk]
+    // Example: "Babička" + "s Elonem Muskem" + "tancovali tango" + "v jaderné elektrárně" + "protože pršelo"
     phases: [
-      "Kdo?",
-      "S kým?",
-      "Co dělali?",
-      "Kde?",
-      "Kdy?",
-      "Proč?",
+      "Kdo / Co?",           // 1. Podmět (nominativ) — "Babička", "Robot"
+      "S kým / S čím?",      // 2. Předmět (instrumentál) — "s Elonem Muskem", "s vysavačem"
+      "Co dělali?",          // 3. Sloveso — "tancovali tango", "jedli guláš"
+      "Kde?",                // 4. Místo — "v jaderné elektrárně", "na záchodě"
+      "Proč / Kdy?",         // 5. Doplněk — "protože pršelo", "o půlnoci"
     ],
     fallbacks: [
-      ["Karel Gott", "Babička", "Prezident"],
-      ["s mimozemšťanem", "s medvědem", "se psem"],
-      ["tancovali salsu", "jedli knedlíky", "opravovali traktor"],
-      ["na Pražském hradě", "v lese", "v supermarketu"],
-      ["o půlnoci", "v neděli ráno", "za bouřky"],
-      ["kvůli daňovým únikům", "protože jim došlo pivo", "z čisté nudy"],
+      ["Babička", "Robot", "Karel Gott", "Prezident", "Mimozemšťan"],
+      ["s Elonem Muskem", "s vysavačem", "s medvědem", "s duchy předků", "s pokladním v Lidlu"],
+      ["tancovali tango", "jedli guláš", "opravovali traktor", "hráli šachy", "sledovali telenovelu"],
+      ["v jaderné elektrárně", "na záchodě", "v Ikea", "na Pražském hradě", "ve výtahu"],
+      ["protože pršelo", "o půlnoci", "kvůli daňovým únikům", "protože jim došlo pivo", "ve snu"],
     ],
 
-    // ── Commentary hook ───────────────────────────────────────────────────
-    // Keys: "flawless" (avg ≥ 2.8), "great" (≥ 2.0), "meh" (≥ 1.3), "rough" (< 1.3)
-    // "unanimous" fires when all votes are identical regardless of score.
-    // Add as many strings as you want — one is picked at random each round.
     commentary: {
       flawless: [
         "Absolutní mistrovství. Toto se bude vyprávět vnukům.",
@@ -55,40 +52,34 @@ export const gameConfig = {
         "Všichni hlasovali stejně. Skupinová psychóza potvrzena.",
         "Shoda panuje. Demokratický proces v plné kráse.",
       ],
-      // ── Per-phase teasers shown BEFORE the answer is revealed ──────────
-      // Shown during the 3-second "drumroll" before sentence appears.
-      // Leave empty arrays to skip the drumroll line.
       teasers: [
-        "A takže... kdo to vlastně byl?",
-        "S kým? No tohle jste nečekali...",
+        "A kdo to vlastně byl?",
+        "S kým? Tohle jste nečekali...",
         "Co dělali? Připravte se...",
         "Kde? Tohle místo nikdo nečekal...",
-        "Kdy? Načasování je všechno...",
-        "Proč? Filozofická otázka věků...",
+        "Proč nebo kdy? Filozofická otázka věků...",
       ],
     },
   },
 
   en: {
+    // ── 5 phases, English strict S-V-O syntax ─────────────────────────────
+    // Result shape: [Subject] + [met Object] + [Where] + [What they did] + [Consequence]
+    // Example: "A ghost" + "met a tired programmer" + "at a crowded bus stop"
+    //        + "they started a revolution" + "and the world changed forever"
     phases: [
-      "Who?",
-      "Met Who?",
-      "What did they do?",
-      "Where?",
-      "When?",
-      "And the consequence was...",
+      "Who?",                        // 1. Subject — "A ghost", "Batman"
+      "Met whom?",                   // 2. Object — "met a tired programmer", "met the Pope"
+      "Where?",                      // 3. Location — "at a crowded bus stop", "in a Lidl"
+      "What did they do?",           // 4. Action — "they started a revolution", "they filed for divorce"
+      "And the consequence was…",    // 5. Result — "and the world changed forever"
     ],
     fallbacks: [
-      ["Batman", "The Pope", "Gordon Ramsay"],
-      ["a crying baby", "a ninja", "the postman"],
-      ["argued about cheese", "did the worm", "filed for bankruptcy"],
-      ["in an Ikea ball pit", "on the moon", "at a Lidl self-checkout"],
-      ["at 3am on a Tuesday", "during a tax audit", "right after brunch"],
-      [
-        "everyone got a fine",
-        "it went viral for the wrong reasons",
-        "nobody spoke of it again",
-      ],
+      ["A ghost", "Batman", "Gordon Ramsay", "The Pope", "A crying accountant"],
+      ["met a tired programmer", "met a ninja", "met the postman", "met a seagull named Dave", "met their landlord"],
+      ["at a crowded bus stop", "in an Ikea ball pit", "on the moon", "at a Lidl self-checkout", "in a broken lift"],
+      ["they started a revolution", "they filed for divorce", "they argued about cheese", "they did the worm", "they wrote a strongly-worded email"],
+      ["and the world changed forever", "and nobody spoke of it again", "and it went viral for the wrong reasons", "and everyone got a fine", "and somehow it was on the news"],
     ],
 
     commentary: {
@@ -114,7 +105,7 @@ export const gameConfig = {
         "Well... you tried. Probably. Hard to tell.",
         "This is why editors exist. And therapists.",
         "An AI would have done better. And AI has no soul.",
-        "I've translated menus at airports that made more sense.",
+        "I've translated airport menus that made more sense.",
       ],
       unanimous: [
         "Unanimous! Either genius or equally confused — both apply.",
@@ -124,40 +115,28 @@ export const gameConfig = {
       teasers: [
         "And so... who was it?",
         "Met who? You won't see this coming...",
-        "What did they do? Brace yourselves...",
         "Where? Nobody expected this location...",
-        "When? Timing is everything...",
+        "What did they do? Brace yourselves...",
         "And the consequence? The universe weeps...",
       ],
     },
   },
 };
 
-// ─── Commentary selector (used by server.js) ──────────────────────────────────
-// Extend this function to add more sophisticated commentary logic later.
-// e.g. you could check specific phrase content, add player-name call-outs, etc.
+// ─── Commentary selector ──────────────────────────────────────────────────────
 
 export function pickCommentary(lang, avgScore, allVotesSame) {
-  const c = gameConfig[lang].commentary;
-
+  const c = gameConfig[lang]?.commentary ?? gameConfig.en.commentary;
   let pool;
-  if (allVotesSame) {
-    pool = c.unanimous;
-  } else if (avgScore >= 2.8) {
-    pool = c.flawless;
-  } else if (avgScore >= 2.0) {
-    pool = c.great;
-  } else if (avgScore >= 1.3) {
-    pool = c.meh;
-  } else {
-    pool = c.rough;
-  }
-
+  if (allVotesSame)    pool = c.unanimous;
+  else if (avgScore >= 2.8) pool = c.flawless;
+  else if (avgScore >= 2.0) pool = c.great;
+  else if (avgScore >= 1.3) pool = c.meh;
+  else                 pool = c.rough;
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
 export function pickTeaser(lang, phaseIndex) {
-  const teasers = gameConfig[lang].commentary.teasers;
-  if (!teasers || !teasers[phaseIndex]) return null;
-  return teasers[phaseIndex];
+  const teasers = gameConfig[lang]?.commentary?.teasers ?? [];
+  return teasers[phaseIndex] ?? null;
 }

@@ -31,12 +31,30 @@ function reducer(state, action) {
     case "ERROR":        return { ...state, error: action.payload };
 
     case "JOINED":
-      return { ...state, playerId: action.payload.playerId, roomCode: action.payload.roomCode, error: null };
+      return {
+        ...state,
+        playerId: action.payload.playerId,
+        roomCode: action.payload.roomCode,
+        error: null,
+      };
 
     case "ROOM_STATE": {
-      const rs = action.payload;
-      // Clear stale review data when entering a fresh review phase
-      const enteringReview = rs.phase === "review" && state.roomState?.phase !== "review";
+      const rs  = action.payload;
+      const old = state.roomState;
+
+      // ── FIX: auto-advance after all players answer ────────────────────
+      // When the server increments currentPhaseIndex (still in "input" phase),
+      // the normal room:state broadcast is the ONLY event clients receive.
+      // We must reset alreadyAnswered here or the textarea never reappears.
+      const phaseIndexAdvanced =
+        rs.phase === "input" &&
+        old?.phase === "input" &&
+        rs.currentPhaseIndex !== old?.currentPhaseIndex;
+
+      // Reset review state when entering a fresh review sentence
+      const enteringReview =
+        rs.phase === "review" && old?.phase !== "review";
+
       return {
         ...state,
         roomState:         rs,
@@ -44,12 +62,16 @@ function reducer(state, action) {
         currentPhaseIndex: rs.currentPhaseIndex ?? state.currentPhaseIndex,
         currentPhaseLabel: rs.phaseLabel         ?? state.currentPhaseLabel,
         totalPhases:       rs.totalPhases         ?? state.totalPhases,
+        // Reset answer flag when moving to the next question
+        alreadyAnswered:   phaseIndexAdvanced ? false : state.alreadyAnswered,
+        // Reset review state when entering review phase
         roundResults:      enteringReview ? null  : state.roundResults,
         alreadyVoted:      enteringReview ? false : state.alreadyVoted,
       };
     }
 
     case "PHASE_PROMPT":
+      // Fired on reconnection — also resets answer state
       return {
         ...state,
         currentPhaseIndex: action.payload.phaseIndex,
@@ -75,7 +97,7 @@ function reducer(state, action) {
 
     case "RESET_ANSWER":   return { ...state, alreadyAnswered: false };
 
-    // Game restarted — wipe all game-specific state, keep identity + connection
+    // Wipe all game state, keep identity + connection
     case "GAME_RESTARTED":
       return {
         ...state,
@@ -109,17 +131,14 @@ export function useGameSocket() {
 
     socket.on("connect", () => {
       dispatch({ type: "CONNECTED" });
-
-      // Silent reconnection
       const pid  = sessionStorage.getItem("exquisite_playerId");
       const code = sessionStorage.getItem("exquisite_roomCode");
       const name = sessionStorage.getItem("exquisite_name");
       if (pid && code && name) {
         socket.emit("room:join", { name, code, existingPlayerId: pid }, (res) => {
           if (res.error) {
-            sessionStorage.removeItem("exquisite_playerId");
-            sessionStorage.removeItem("exquisite_roomCode");
-            sessionStorage.removeItem("exquisite_name");
+            ["exquisite_playerId","exquisite_roomCode","exquisite_name"]
+              .forEach((k) => sessionStorage.removeItem(k));
           } else {
             dispatch({ type: "JOINED", payload: { playerId: pid, roomCode: code } });
           }
@@ -138,7 +157,7 @@ export function useGameSocket() {
     });
 
     socket.on("room:state",        (d) => dispatch({ type: "ROOM_STATE",      payload: d }));
-    socket.on("phase:prompt",      (d) => { dispatch({ type: "PHASE_PROMPT",  payload: d }); dispatch({ type: "RESET_ANSWER" }); });
+    socket.on("phase:prompt",      (d) => dispatch({ type: "PHASE_PROMPT",    payload: d }));
     socket.on("review:sentence",   (d) => dispatch({ type: "REVIEW_SENTENCE", payload: d }));
     socket.on("round:results",     (d) => dispatch({ type: "ROUND_RESULTS",   payload: d }));
     socket.on("game:finalResults", (d) => dispatch({ type: "FINAL_RESULTS",  payload: d }));
@@ -147,8 +166,6 @@ export function useGameSocket() {
     socket.connect();
     return () => socket.disconnect();
   }, []);
-
-  // ── Public API ────────────────────────────────────────────────────────────
 
   const createRoom = useCallback((name, lang) =>
     new Promise((resolve, reject) => {
@@ -208,5 +225,13 @@ export function useGameSocket() {
       });
     }), []);
 
-  return { ...state, createRoom, joinRoom, startGame, restartGame, submitAnswer, submitVote };
+  return {
+    ...state,
+    createRoom,
+    joinRoom,
+    startGame,
+    restartGame,
+    submitAnswer,
+    submitVote,
+  };
 }

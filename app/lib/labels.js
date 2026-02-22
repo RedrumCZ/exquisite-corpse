@@ -1,10 +1,19 @@
-// lib/labels.js
-// Single source of truth for ALL UI text in both languages.
-// Import this wherever you need bilingual strings.
-// Usage: GAME_LABELS[lang].someKey
+// app/lib/labels.js
+// All UI text for both languages. Import with:
+//   import { GAME_LABELS } from "../lib/labels";
+//   const t = GAME_LABELS[lang];
 
 export const GAME_LABELS = {
   en: {
+    // ── Per-phase example hints shown below each prompt ───────────────────
+    phaseHints: [
+      'e.g. "A ghost", "Gordon Ramsay", "My neighbour"',
+      'e.g. "met a tired programmer", "met the Pope"',
+      'e.g. "at a crowded bus stop", "in an Ikea ball pit"',
+      'e.g. "they started a revolution", "they filed for divorce"',
+      'e.g. "and the world changed forever", "and nobody spoke of it again"',
+    ],
+
     // ── Lobby ──────────────────────────────────────────────────────────────
     shareCode:        "Share this code with your friends 📱",
     waitingForHost:   "⏳ Waiting for host to start…",
@@ -15,7 +24,7 @@ export const GAME_LABELS = {
 
     // ── Input phase ────────────────────────────────────────────────────────
     question:         (cur, total) => `Question ${cur} of ${total}`,
-    hiddenHint:       "🔒 Your answer is hidden from everyone else",
+    hiddenHint:       "🔒 Other players can't see your answer",
     answerPlaceholder:"Type your answer…",
     lockIn:           "🔒 Lock In Answer",
     lockingIn:        "Locking in…",
@@ -45,6 +54,7 @@ export const GAME_LABELS = {
     playAgain:        "🔄 Next Round",
     backHome:         "🏠 Back to Home",
     you:              "(you)",
+    waitingNextRound: "Waiting for host to start the next round…",
 
     // ── Connection ─────────────────────────────────────────────────────────
     connecting:       "⏳ Connecting to server… (first load may take ~30s)",
@@ -69,16 +79,21 @@ export const GAME_LABELS = {
     needName:         "Enter your name first.",
     needCode:         "Enter a 4-letter room code.",
     footer:           "Open on every player's phone · No app needed",
-
-    // ── Misc ───────────────────────────────────────────────────────────────
-    loading:          "Loading…",
-    connectingLabel:  "Connecting…",
     loadingRoom:      "Loading room…",
   },
 
   cs: {
+    // ── Per-phase example hints ────────────────────────────────────────────
+    phaseHints: [
+      'např. "Babička", "Robot", "Můj soused"',
+      'např. "s Elonem Muskem", "s medvědem"',
+      'např. "tancovali tango", "jedli guláš"',
+      'např. "v jaderné elektrárně", "na záchodě"',
+      'např. "protože pršelo", "o půlnoci"',
+    ],
+
     // ── Lobby ──────────────────────────────────────────────────────────────
-    shareCode:        "Pošli tento kód svým přátelům 📱",
+    shareCode:        "Pošli tento kód přátelům 📱",
     waitingForHost:   "⏳ Čekáme až hostitel spustí hru…",
     startGame:        "🚀 Spustit hru",
     waitingPlayers:   (n) => `Čekáme na hráče… (${n}/2 min)`,
@@ -87,7 +102,7 @@ export const GAME_LABELS = {
 
     // ── Input phase ────────────────────────────────────────────────────────
     question:         (cur, total) => `Otázka ${cur} z ${total}`,
-    hiddenHint:       "🔒 Tvoji odpověď ostatní neuvidí",
+    hiddenHint:       "🔒 Ostatní tvoji odpověď neuvidí",
     answerPlaceholder:"Napiš svou odpověď…",
     lockIn:           "🔒 Potvrdit odpověď",
     lockingIn:        "Ukládám…",
@@ -117,6 +132,7 @@ export const GAME_LABELS = {
     playAgain:        "🔄 Další kolo",
     backHome:         "🏠 Zpět domů",
     you:              "(ty)",
+    waitingNextRound: "Čekáme až hostitel spustí další kolo…",
 
     // ── Connection ─────────────────────────────────────────────────────────
     connecting:       "⏳ Připojuji se… (první start může trvat ~30s)",
@@ -141,10 +157,6 @@ export const GAME_LABELS = {
     needName:         "Nejdřív zadej jméno.",
     needCode:         "Zadej 4-písmenný kód místnosti.",
     footer:           "Otevři na každém telefonu · Žádná instalace",
-
-    // ── Misc ───────────────────────────────────────────────────────────────
-    loading:          "Načítám…",
-    connectingLabel:  "Připojuji se…",
     loadingRoom:      "Načítám místnost…",
   },
 };
