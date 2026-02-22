@@ -7,24 +7,25 @@ import { io } from "socket.io-client";
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 
 const initialState = {
-  connected: false,
-  error: null,
-  playerId: null,
-  roomCode: null,
-  isHost: false,
-  roomState: null,
-  currentPhaseLabel: null,
-  currentPhaseIndex: null,
-  totalPhases: null,
-  alreadyAnswered: false,
-  reviewSentence: null,
-  alreadyVoted: false,
-  roundResults: null,
-  finalResults: null,
+  connected:          false,
+  error:              null,
+  playerId:           null,
+  roomCode:           null,
+  isHost:             false,
+  roomState:          null,
+  currentPhaseLabel:  null,
+  currentPhaseIndex:  null,
+  totalPhases:        null,
+  alreadyAnswered:    false,
+  reviewSentence:     null,
+  alreadyVoted:       false,
+  roundResults:       null,
+  finalResults:       null,
 };
 
 function reducer(state, action) {
   switch (action.type) {
+
     case "CONNECTED":    return { ...state, connected: true, error: null };
     case "DISCONNECTED": return { ...state, connected: false };
     case "ERROR":        return { ...state, error: action.payload };
@@ -34,13 +35,17 @@ function reducer(state, action) {
 
     case "ROOM_STATE": {
       const rs = action.payload;
+      // Clear stale review data when entering a fresh review phase
+      const enteringReview = rs.phase === "review" && state.roomState?.phase !== "review";
       return {
         ...state,
-        roomState: rs,
-        isHost: rs.hostId === state.playerId,
+        roomState:         rs,
+        isHost:            rs.hostId === state.playerId,
         currentPhaseIndex: rs.currentPhaseIndex ?? state.currentPhaseIndex,
-        currentPhaseLabel: rs.phaseLabel ?? state.currentPhaseLabel,
-        totalPhases: rs.totalPhases ?? state.totalPhases,
+        currentPhaseLabel: rs.phaseLabel         ?? state.currentPhaseLabel,
+        totalPhases:       rs.totalPhases         ?? state.totalPhases,
+        roundResults:      enteringReview ? null  : state.roundResults,
+        alreadyVoted:      enteringReview ? false : state.alreadyVoted,
       };
     }
 
@@ -49,13 +54,18 @@ function reducer(state, action) {
         ...state,
         currentPhaseIndex: action.payload.phaseIndex,
         currentPhaseLabel: action.payload.phaseLabel,
-        alreadyAnswered: action.payload.alreadyAnswered ?? false,
+        alreadyAnswered:   action.payload.alreadyAnswered ?? false,
       };
 
     case "ANSWER_SUBMITTED": return { ...state, alreadyAnswered: true };
 
     case "REVIEW_SENTENCE":
-      return { ...state, reviewSentence: action.payload, alreadyVoted: action.payload.alreadyVoted ?? false, roundResults: null };
+      return {
+        ...state,
+        reviewSentence: action.payload,
+        alreadyVoted:   action.payload.alreadyVoted ?? false,
+        roundResults:   null,
+      };
 
     case "VOTE_SUBMITTED": return { ...state, alreadyVoted: true };
 
@@ -64,6 +74,20 @@ function reducer(state, action) {
     case "FINAL_RESULTS":  return { ...state, finalResults: action.payload };
 
     case "RESET_ANSWER":   return { ...state, alreadyAnswered: false };
+
+    // Game restarted — wipe all game-specific state, keep identity + connection
+    case "GAME_RESTARTED":
+      return {
+        ...state,
+        currentPhaseLabel:  null,
+        currentPhaseIndex:  null,
+        totalPhases:        null,
+        alreadyAnswered:    false,
+        reviewSentence:     null,
+        alreadyVoted:       false,
+        roundResults:       null,
+        finalResults:       null,
+      };
 
     default: return state;
   }
@@ -78,7 +102,6 @@ export function useGameSocket() {
       autoConnect: false,
       reconnectionAttempts: 15,
       reconnectionDelay: 1500,
-      // Force WebSocket only — avoids long-polling issues on Render
       transports: ["websocket"],
       upgrade: false,
     });
@@ -87,11 +110,10 @@ export function useGameSocket() {
     socket.on("connect", () => {
       dispatch({ type: "CONNECTED" });
 
-      // Silent reconnection from sessionStorage
+      // Silent reconnection
       const pid  = sessionStorage.getItem("exquisite_playerId");
       const code = sessionStorage.getItem("exquisite_roomCode");
       const name = sessionStorage.getItem("exquisite_name");
-
       if (pid && code && name) {
         socket.emit("room:join", { name, code, existingPlayerId: pid }, (res) => {
           if (res.error) {
@@ -115,15 +137,18 @@ export function useGameSocket() {
       dispatch({ type: "DISCONNECTED" });
     });
 
-    socket.on("room:state",      (d) => dispatch({ type: "ROOM_STATE",      payload: d }));
-    socket.on("phase:prompt",    (d) => { dispatch({ type: "PHASE_PROMPT",  payload: d }); dispatch({ type: "RESET_ANSWER" }); });
-    socket.on("review:sentence", (d) => dispatch({ type: "REVIEW_SENTENCE", payload: d }));
-    socket.on("round:results",   (d) => dispatch({ type: "ROUND_RESULTS",   payload: d }));
-    socket.on("game:finalResults",(d) => dispatch({ type: "FINAL_RESULTS",  payload: d }));
+    socket.on("room:state",        (d) => dispatch({ type: "ROOM_STATE",      payload: d }));
+    socket.on("phase:prompt",      (d) => { dispatch({ type: "PHASE_PROMPT",  payload: d }); dispatch({ type: "RESET_ANSWER" }); });
+    socket.on("review:sentence",   (d) => dispatch({ type: "REVIEW_SENTENCE", payload: d }));
+    socket.on("round:results",     (d) => dispatch({ type: "ROUND_RESULTS",   payload: d }));
+    socket.on("game:finalResults", (d) => dispatch({ type: "FINAL_RESULTS",  payload: d }));
+    socket.on("game:restarted",    ()  => dispatch({ type: "GAME_RESTARTED" }));
 
     socket.connect();
     return () => socket.disconnect();
   }, []);
+
+  // ── Public API ────────────────────────────────────────────────────────────
 
   const createRoom = useCallback((name, lang) =>
     new Promise((resolve, reject) => {
@@ -157,6 +182,14 @@ export function useGameSocket() {
       });
     }), []);
 
+  const restartGame = useCallback(() =>
+    new Promise((resolve, reject) => {
+      socketRef.current.emit("game:restart", null, (res) => {
+        if (res?.error) return reject(new Error(res.error));
+        resolve(res);
+      });
+    }), []);
+
   const submitAnswer = useCallback((answer) =>
     new Promise((resolve, reject) => {
       socketRef.current.emit("phase:submit", { answer }, (res) => {
@@ -175,5 +208,5 @@ export function useGameSocket() {
       });
     }), []);
 
-  return { ...state, createRoom, joinRoom, startGame, submitAnswer, submitVote };
+  return { ...state, createRoom, joinRoom, startGame, restartGame, submitAnswer, submitVote };
 }

@@ -4,12 +4,12 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { gameConfig, pickCommentary, pickTeaser } from "./gameConfig.js";
 
-const PORT = process.env.PORT || 3001;
-const MAX_PLAYERS = 10;
-const PHASE_TIMEOUT_MS  = 90_000;
+const PORT               = process.env.PORT || 3001;
+const MAX_PLAYERS        = 10;
+const PHASE_TIMEOUT_MS   = 90_000;
 const REVIEW_DURATION_MS = 20_000;
-const RESULTS_PAUSE_MS  = 5_000;
-const DRUMROLL_MS       = 2_500;
+const RESULTS_PAUSE_MS   = 5_000;
+const DRUMROLL_MS        = 2_500;
 
 const rooms = new Map();
 
@@ -48,7 +48,9 @@ function getRoomPayload(room) {
     phase: room.phase,
     currentPhaseIndex: room.currentPhaseIndex,
     currentSentenceIndex: room.currentSentenceIndex,
-    phaseLabel: room.phase === "input" ? gameConfig[room.lang].phases[room.currentPhaseIndex] : null,
+    phaseLabel: room.phase === "input"
+      ? gameConfig[room.lang].phases[room.currentPhaseIndex]
+      : null,
     totalPhases: gameConfig[room.lang].phases.length,
     totalSentences: room.finalSentences.length,
     hostId: room.hostId,
@@ -65,9 +67,7 @@ function assembleSentences(room) {
   const N = playerList.length;
   const phaseCount = gameConfig[room.lang].phases.length;
   return playerList.map((_, si) =>
-    Array.from({ length: phaseCount }, (__, pi) => {
-      return playerList[(si + pi) % N].answers[pi];
-    })
+    Array.from({ length: phaseCount }, (__, pi) => playerList[(si + pi) % N].answers[pi])
   );
 }
 
@@ -75,7 +75,9 @@ function assembleSentences(room) {
 
 function checkPhaseCompletion(io, room) {
   const active = Array.from(room.players.values()).filter((p) => !p.disconnected);
-  if (active.every((p) => room.phaseAnswers.has(p.id))) advanceInputPhase(io, room.code);
+  if (active.length > 0 && active.every((p) => room.phaseAnswers.has(p.id))) {
+    advanceInputPhase(io, room.code);
+  }
 }
 
 function advanceInputPhase(io, roomCode) {
@@ -83,13 +85,13 @@ function advanceInputPhase(io, roomCode) {
   if (!room || room.phase !== "input") return;
   clearRoomTimer(room);
 
-  const phaseIndex = room.currentPhaseIndex;
+  const pi = room.currentPhaseIndex;
   for (const [, player] of room.players) {
-    player.answers[phaseIndex] = room.phaseAnswers.get(player.id) ?? pickFallback(room.lang, phaseIndex);
+    player.answers[pi] = room.phaseAnswers.get(player.id) ?? pickFallback(room.lang, pi);
   }
   room.phaseAnswers.clear();
 
-  const next = phaseIndex + 1;
+  const next = pi + 1;
   if (next >= gameConfig[room.lang].phases.length) {
     room.finalSentences = assembleSentences(room);
     startReviewPhase(io, roomCode, 0);
@@ -110,15 +112,20 @@ function startReviewPhase(io, roomCode, sentenceIndex) {
   room.phase = "review";
   room.currentSentenceIndex = sentenceIndex;
   room.votes.clear();
+
+  // Broadcast state change FIRST so clients know to switch screens
   broadcastRoomState(io, room);
 
+  // Then send the sentence content after drumroll pause
   setTimeout(() => {
+    const r = rooms.get(roomCode);
+    if (!r || r.phase !== "review") return; // guard — room may have gone away
     io.to(roomCode).emit("review:sentence", {
       sentenceIndex,
-      sentence: room.finalSentences[sentenceIndex],
-      phaseLabels: gameConfig[room.lang].phases,
+      sentence: r.finalSentences[sentenceIndex],
+      phaseLabels: gameConfig[r.lang].phases,
       reviewDuration: REVIEW_DURATION_MS,
-      totalSentences: room.finalSentences.length,
+      totalSentences: r.finalSentences.length,
     });
   }, DRUMROLL_MS);
 
@@ -127,7 +134,9 @@ function startReviewPhase(io, roomCode, sentenceIndex) {
 
 function checkVotingCompletion(io, room) {
   const active = Array.from(room.players.values()).filter((p) => !p.disconnected);
-  if (active.every((p) => room.votes.has(p.id))) closeVoting(io, room.code);
+  if (active.length > 0 && active.every((p) => room.votes.has(p.id))) {
+    closeVoting(io, room.code);
+  }
 }
 
 function closeVoting(io, roomCode) {
@@ -135,29 +144,30 @@ function closeVoting(io, roomCode) {
   if (!room || room.phase !== "review") return;
   clearRoomTimer(room);
 
-  const lang = room.lang;
-  const votes = Array.from(room.votes.values());
-  const totalVoters = votes.length || 1;
-  const avgScore = votes.reduce((a, b) => a + b, 0) / totalVoters;
-  const allVotesSame = new Set(votes).size === 1 && votes.length > 1;
+  const lang   = room.lang;
+  const votes  = Array.from(room.votes.values());
+  const total  = votes.length || 1;
+  const avg    = votes.reduce((a, b) => a + b, 0) / total;
+  const allSame = new Set(votes).size === 1 && votes.length > 1;
 
+  // Award proportional score per player contribution
   const playerList = Array.from(room.players.values());
   const N = playerList.length;
   const phaseCount = gameConfig[lang].phases.length;
   const si = room.currentSentenceIndex;
 
-  const contributionMap = new Map();
+  const contrib = new Map();
   for (let pi = 0; pi < phaseCount; pi++) {
     const pid = playerList[(si + pi) % N].id;
-    contributionMap.set(pid, (contributionMap.get(pid) ?? 0) + 1);
+    contrib.set(pid, (contrib.get(pid) ?? 0) + 1);
   }
-  for (const [pid, count] of contributionMap) {
-    const share = (avgScore * count) / phaseCount;
+  for (const [pid, count] of contrib) {
+    const share = (avg * count) / phaseCount;
     room.scores.set(pid, (room.scores.get(pid) ?? 0) + share);
   }
 
-  const voteBreakdown = { 1: 0, 2: 0, 3: 0 };
-  for (const v of votes) voteBreakdown[v] = (voteBreakdown[v] ?? 0) + 1;
+  const breakdown = { 1: 0, 2: 0, 3: 0 };
+  for (const v of votes) breakdown[v] = (breakdown[v] ?? 0) + 1;
 
   room.phase = "roundResults";
   broadcastRoomState(io, room);
@@ -166,9 +176,9 @@ function closeVoting(io, roomCode) {
     sentenceIndex: si,
     sentence: room.finalSentences[si],
     phaseLabels: gameConfig[lang].phases,
-    voteBreakdown,
-    avgScore: Math.round(avgScore * 10) / 10,
-    commentary: pickCommentary(lang, avgScore, allVotesSame),
+    voteBreakdown: breakdown,
+    avgScore: Math.round(avg * 10) / 10,
+    commentary: pickCommentary(lang, avg, allSame),
     scores: Object.fromEntries(
       Array.from(room.players.values()).map((p) => [
         p.id,
@@ -185,6 +195,8 @@ function closeVoting(io, roomCode) {
   }, RESULTS_PAUSE_MS);
 }
 
+// ─── Final Results ────────────────────────────────────────────────────────────
+
 function startFinalResults(io, roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
@@ -192,7 +204,11 @@ function startFinalResults(io, roomCode) {
   room.phase = "finalResults";
 
   const leaderboard = Array.from(room.players.values())
-    .map((p) => ({ id: p.id, name: p.name, score: Math.round((room.scores.get(p.id) ?? 0) * 10) / 10 }))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      score: Math.round((room.scores.get(p.id) ?? 0) * 10) / 10,
+    }))
     .sort((a, b) => b.score - a.score);
 
   broadcastRoomState(io, room);
@@ -204,27 +220,44 @@ function startFinalResults(io, roomCode) {
   });
 }
 
+// ─── Game Restart (Next Round) ────────────────────────────────────────────────
+// Resets all game state but keeps players connected in the same room.
+// Host calls this. Emits room:state with phase="lobby" to all clients.
+
+function resetRoomForNextRound(room) {
+  clearRoomTimer(room);
+
+  room.phase               = "lobby";
+  room.currentPhaseIndex   = 0;
+  room.currentSentenceIndex = 0;
+  room.finalSentences      = [];
+  room.phaseAnswers.clear();
+  room.votes.clear();
+  room.scores.clear();
+
+  // Reset each player's answers and reconnect any dropped players
+  for (const player of room.players.values()) {
+    player.answers = [];
+    // Keep disconnected flag as-is — they'll reconnect or not
+  }
+}
+
 // ─── Express + Socket.io ──────────────────────────────────────────────────────
 
 const app = express();
 const httpServer = createServer(app);
 
-// ── Health routes so Render's uptime check returns 200 ──
-app.get("/",        (_, res) => res.send("OK"));
-app.get("/health",  (_, res) => res.send("OK"));
+app.get("/",       (_, res) => res.send("OK"));
+app.get("/health", (_, res) => res.send("OK"));
 
 const io = new Server(httpServer, {
   cors: {
     origin: [
       "http://localhost:3000",
       "http://127.0.0.1:3000",
-      // Your exact Vercel domain:
       "https://exquisite-corpse-theta.vercel.app",
-      // Any Vercel preview deploy:
       /\.vercel\.app$/,
-      // Any LAN address (local dev on mobile):
       /^http:\/\/192\.168\.\d+\.\d+/,
-      // Env-var override for custom domains:
       process.env.FRONTEND_URL,
     ].filter(Boolean),
     methods: ["GET", "POST"],
@@ -237,15 +270,19 @@ io.on("connection", (socket) => {
 
   // ── Create Room ──────────────────────────────────────────────────────────
   socket.on("room:create", ({ name, lang }, cb) => {
-    if (!name?.trim() || !["cs", "en"].includes(lang)) return cb({ error: "Invalid name or language." });
-
-    const code = generateRoomCode();
+    if (!name?.trim() || !["cs", "en"].includes(lang)) {
+      return cb({ error: "Invalid name or language." });
+    }
+    const code     = generateRoomCode();
     const playerId = socket.id;
 
     rooms.set(code, {
       code, lang, hostId: playerId,
       phase: "lobby", currentPhaseIndex: 0, currentSentenceIndex: 0,
-      players: new Map([[playerId, { id: playerId, name: name.trim(), socketId: socket.id, answers: [], disconnected: false }]]),
+      players: new Map([[playerId, {
+        id: playerId, name: name.trim(),
+        socketId: socket.id, answers: [], disconnected: false,
+      }]]),
       phaseAnswers: new Map(), votes: new Map(), scores: new Map(),
       finalSentences: [], activeTimer: null,
     });
@@ -263,10 +300,10 @@ io.on("connection", (socket) => {
     const room  = rooms.get(upper);
     if (!room) return cb({ error: "Room not found." });
 
-    // Reconnection path
+    // Reconnection
     if (existingPlayerId && room.players.has(existingPlayerId)) {
       const player = room.players.get(existingPlayerId);
-      player.socketId = socket.id;
+      player.socketId    = socket.id;
       player.disconnected = false;
       socket.join(upper);
       socket.data.playerId = existingPlayerId;
@@ -311,7 +348,10 @@ io.on("connection", (socket) => {
     if (room.players.size >= MAX_PLAYERS) return cb({ error: "Room is full (max 10)." });
 
     const playerId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    room.players.set(playerId, { id: playerId, name: name.trim(), socketId: socket.id, answers: [], disconnected: false });
+    room.players.set(playerId, {
+      id: playerId, name: name.trim(),
+      socketId: socket.id, answers: [], disconnected: false,
+    });
     socket.join(upper);
     socket.data.playerId = playerId;
     socket.data.roomCode = upper;
@@ -323,10 +363,10 @@ io.on("connection", (socket) => {
   socket.on("game:start", (_, cb) => {
     const { playerId, roomCode } = socket.data;
     const room = rooms.get(roomCode);
-    if (!room)                       return cb?.({ error: "Room not found." });
-    if (room.hostId !== playerId)    return cb?.({ error: "Only host can start." });
-    if (room.players.size < 2)       return cb?.({ error: "Need at least 2 players." });
-    if (room.phase !== "lobby")      return cb?.({ error: "Already started." });
+    if (!room)                    return cb?.({ error: "Room not found." });
+    if (room.hostId !== playerId) return cb?.({ error: "Only host can start." });
+    if (room.players.size < 2)    return cb?.({ error: "Need at least 2 players." });
+    if (room.phase !== "lobby")   return cb?.({ error: "Already started." });
 
     room.phase = "input";
     room.currentPhaseIndex = 0;
@@ -339,14 +379,30 @@ io.on("connection", (socket) => {
     cb?.({ ok: true });
   });
 
+  // ── Next Round ───────────────────────────────────────────────────────────
+  // Resets game state, keeps all players. Host-only.
+  socket.on("game:restart", (_, cb) => {
+    const { playerId, roomCode } = socket.data;
+    const room = rooms.get(roomCode);
+    if (!room)                    return cb?.({ error: "Room not found." });
+    if (room.hostId !== playerId) return cb?.({ error: "Only host can start a new round." });
+    if (room.phase !== "finalResults") return cb?.({ error: "Can only restart after final results." });
+
+    resetRoomForNextRound(room);
+    broadcastRoomState(io, room);
+    // Emit a dedicated event so non-host clients know to go to lobby
+    io.to(roomCode).emit("game:restarted");
+    cb?.({ ok: true });
+  });
+
   // ── Submit Answer ────────────────────────────────────────────────────────
   socket.on("phase:submit", ({ answer }, cb) => {
     const { playerId, roomCode } = socket.data;
     const room = rooms.get(roomCode);
-    if (!room || room.phase !== "input")    return cb?.({ error: "Not in input phase." });
+    if (!room || room.phase !== "input")          return cb?.({ error: "Not in input phase." });
     if (!playerId || !room.players.has(playerId)) return cb?.({ error: "Unknown player." });
-    if (room.phaseAnswers.has(playerId))    return cb?.({ error: "Already submitted." });
-    if (!answer?.trim())                    return cb?.({ error: "Answer cannot be empty." });
+    if (room.phaseAnswers.has(playerId))          return cb?.({ error: "Already submitted." });
+    if (!answer?.trim())                          return cb?.({ error: "Answer cannot be empty." });
 
     room.phaseAnswers.set(playerId, answer.trim().slice(0, 280));
     cb?.({ ok: true });
@@ -358,9 +414,9 @@ io.on("connection", (socket) => {
   socket.on("review:vote", ({ stars }, cb) => {
     const { playerId, roomCode } = socket.data;
     const room = rooms.get(roomCode);
-    if (!room || room.phase !== "review")   return cb?.({ error: "Not in review phase." });
+    if (!room || room.phase !== "review")         return cb?.({ error: "Not in review phase." });
     if (!playerId || !room.players.has(playerId)) return cb?.({ error: "Unknown player." });
-    if (room.votes.has(playerId))           return cb?.({ error: "Already voted." });
+    if (room.votes.has(playerId))                 return cb?.({ error: "Already voted." });
 
     const s = Math.min(3, Math.max(1, Math.round(Number(stars))));
     if (isNaN(s)) return cb?.({ error: "Invalid vote." });
@@ -405,5 +461,5 @@ httpServer.listen(PORT, () => {
   console.log(`🎲 Game server running on port ${PORT}`);
 });
 
-// Keep-alive ping — prevents Render free tier from sleeping mid-game
+// Keep-alive: prevents Render free tier from sleeping mid-game
 setInterval(() => console.log("[keepalive]"), 14 * 60 * 1000);
