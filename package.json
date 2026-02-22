@@ -1,0 +1,20 @@
+{
+  "name": "exquisite-corpse",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"node server.js\" \"next dev --port 3000\"",
+    "build": "next build",
+    "start": "concurrently \"node server.js\" \"next start\""
+  },
+  "dependencies": {
+    "concurrently": "^8.2.0",
+    "express": "^4.18.0",
+    "html2canvas": "^1.4.1",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "socket.io": "^4.7.0",
+    "socket.io-client": "^4.7.0"
+  }
+}
