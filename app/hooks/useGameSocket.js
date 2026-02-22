@@ -6,53 +6,31 @@ import { io } from "socket.io-client";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 
-// ─── State ────────────────────────────────────────────────────────────────────
-
 const initialState = {
   connected: false,
   error: null,
-
-  // Identity
   playerId: null,
   roomCode: null,
   isHost: false,
-
-  // Room
   roomState: null,
-
-  // Input phase
   currentPhaseLabel: null,
   currentPhaseIndex: null,
   totalPhases: null,
   alreadyAnswered: false,
-
-  // Review phase
-  reviewSentence: null,        // { sentenceIndex, sentence, phaseLabels, reviewDuration, totalSentences }
+  reviewSentence: null,
   alreadyVoted: false,
-
-  // Round results (shown briefly after each sentence's voting closes)
-  roundResults: null,          // { voteBreakdown, avgScore, commentary, scores, isLastSentence }
-
-  // Final results
-  finalResults: null,          // { leaderboard, allSentences, phaseLabels, lang }
+  roundResults: null,
+  finalResults: null,
 };
 
 function reducer(state, action) {
   switch (action.type) {
-    case "CONNECTED":
-      return { ...state, connected: true, error: null };
-    case "DISCONNECTED":
-      return { ...state, connected: false };
-    case "ERROR":
-      return { ...state, error: action.payload };
+    case "CONNECTED":    return { ...state, connected: true, error: null };
+    case "DISCONNECTED": return { ...state, connected: false };
+    case "ERROR":        return { ...state, error: action.payload };
 
     case "JOINED":
-      return {
-        ...state,
-        playerId: action.payload.playerId,
-        roomCode: action.payload.roomCode,
-        error: null,
-      };
+      return { ...state, playerId: action.payload.playerId, roomCode: action.payload.roomCode, error: null };
 
     case "ROOM_STATE": {
       const rs = action.payload;
@@ -74,35 +52,22 @@ function reducer(state, action) {
         alreadyAnswered: action.payload.alreadyAnswered ?? false,
       };
 
-    case "ANSWER_SUBMITTED":
-      return { ...state, alreadyAnswered: true };
+    case "ANSWER_SUBMITTED": return { ...state, alreadyAnswered: true };
 
     case "REVIEW_SENTENCE":
-      return {
-        ...state,
-        reviewSentence: action.payload,
-        alreadyVoted: action.payload.alreadyVoted ?? false,
-        roundResults: null, // clear previous round result
-      };
+      return { ...state, reviewSentence: action.payload, alreadyVoted: action.payload.alreadyVoted ?? false, roundResults: null };
 
-    case "VOTE_SUBMITTED":
-      return { ...state, alreadyVoted: true };
+    case "VOTE_SUBMITTED": return { ...state, alreadyVoted: true };
 
-    case "ROUND_RESULTS":
-      return { ...state, roundResults: action.payload };
+    case "ROUND_RESULTS":  return { ...state, roundResults: action.payload };
 
-    case "FINAL_RESULTS":
-      return { ...state, finalResults: action.payload };
+    case "FINAL_RESULTS":  return { ...state, finalResults: action.payload };
 
-    case "RESET_FOR_NEW_PHASE":
-      return { ...state, alreadyAnswered: false };
+    case "RESET_ANSWER":   return { ...state, alreadyAnswered: false };
 
-    default:
-      return state;
+    default: return state;
   }
 }
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useGameSocket() {
   const socketRef = useRef(null);
@@ -111,72 +76,57 @@ export function useGameSocket() {
   useEffect(() => {
     const socket = io(SOCKET_URL, {
       autoConnect: false,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      transports: ["websocket", "polling"],
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1500,
+      // Force WebSocket only — avoids long-polling issues on Render
+      transports: ["websocket"],
+      upgrade: false,
     });
     socketRef.current = socket;
 
     socket.on("connect", () => {
       dispatch({ type: "CONNECTED" });
 
-      // Silent reconnection via sessionStorage
-      const storedPlayerId = sessionStorage.getItem("exquisite_playerId");
-      const storedRoomCode = sessionStorage.getItem("exquisite_roomCode");
-      const storedName = sessionStorage.getItem("exquisite_name");
+      // Silent reconnection from sessionStorage
+      const pid  = sessionStorage.getItem("exquisite_playerId");
+      const code = sessionStorage.getItem("exquisite_roomCode");
+      const name = sessionStorage.getItem("exquisite_name");
 
-      if (storedPlayerId && storedRoomCode && storedName) {
-        socket.emit(
-          "room:join",
-          { name: storedName, code: storedRoomCode, existingPlayerId: storedPlayerId },
-          (res) => {
-            if (res.error) {
-              sessionStorage.removeItem("exquisite_playerId");
-              sessionStorage.removeItem("exquisite_roomCode");
-              sessionStorage.removeItem("exquisite_name");
-            } else {
-              dispatch({
-                type: "JOINED",
-                payload: { playerId: storedPlayerId, roomCode: storedRoomCode },
-              });
-            }
+      if (pid && code && name) {
+        socket.emit("room:join", { name, code, existingPlayerId: pid }, (res) => {
+          if (res.error) {
+            sessionStorage.removeItem("exquisite_playerId");
+            sessionStorage.removeItem("exquisite_roomCode");
+            sessionStorage.removeItem("exquisite_name");
+          } else {
+            dispatch({ type: "JOINED", payload: { playerId: pid, roomCode: code } });
           }
-        );
+        });
       }
     });
 
-    socket.on("disconnect", () => dispatch({ type: "DISCONNECTED" }));
-
-    socket.on("room:state", (data) => {
-      dispatch({ type: "ROOM_STATE", payload: data });
+    socket.on("connect_error", (err) => {
+      console.error("[socket] connect_error", err.message);
+      dispatch({ type: "ERROR", payload: "Connection failed — retrying…" });
     });
 
-    socket.on("phase:prompt", (data) => {
-      dispatch({ type: "PHASE_PROMPT", payload: data });
-      dispatch({ type: "RESET_FOR_NEW_PHASE" });
+    socket.on("disconnect", (reason) => {
+      console.warn("[socket] disconnect", reason);
+      dispatch({ type: "DISCONNECTED" });
     });
 
-    socket.on("review:sentence", (data) => {
-      dispatch({ type: "REVIEW_SENTENCE", payload: data });
-    });
-
-    socket.on("round:results", (data) => {
-      dispatch({ type: "ROUND_RESULTS", payload: data });
-    });
-
-    socket.on("game:finalResults", (data) => {
-      dispatch({ type: "FINAL_RESULTS", payload: data });
-    });
+    socket.on("room:state",      (d) => dispatch({ type: "ROOM_STATE",      payload: d }));
+    socket.on("phase:prompt",    (d) => { dispatch({ type: "PHASE_PROMPT",  payload: d }); dispatch({ type: "RESET_ANSWER" }); });
+    socket.on("review:sentence", (d) => dispatch({ type: "REVIEW_SENTENCE", payload: d }));
+    socket.on("round:results",   (d) => dispatch({ type: "ROUND_RESULTS",   payload: d }));
+    socket.on("game:finalResults",(d) => dispatch({ type: "FINAL_RESULTS",  payload: d }));
 
     socket.connect();
-
     return () => socket.disconnect();
   }, []);
 
-  // ─── Public API ──────────────────────────────────────────────────────────
-
-  const createRoom = useCallback((name, lang) => {
-    return new Promise((resolve, reject) => {
+  const createRoom = useCallback((name, lang) =>
+    new Promise((resolve, reject) => {
       socketRef.current.emit("room:create", { name, lang }, (res) => {
         if (res.error) return reject(new Error(res.error));
         sessionStorage.setItem("exquisite_playerId", res.playerId);
@@ -185,11 +135,10 @@ export function useGameSocket() {
         dispatch({ type: "JOINED", payload: { playerId: res.playerId, roomCode: res.code } });
         resolve(res);
       });
-    });
-  }, []);
+    }), []);
 
-  const joinRoom = useCallback((name, code) => {
-    return new Promise((resolve, reject) => {
+  const joinRoom = useCallback((name, code) =>
+    new Promise((resolve, reject) => {
       socketRef.current.emit("room:join", { name, code }, (res) => {
         if (res.error) return reject(new Error(res.error));
         sessionStorage.setItem("exquisite_playerId", res.playerId);
@@ -198,44 +147,33 @@ export function useGameSocket() {
         dispatch({ type: "JOINED", payload: { playerId: res.playerId, roomCode: code.toUpperCase() } });
         resolve(res);
       });
-    });
-  }, []);
+    }), []);
 
-  const startGame = useCallback(() => {
-    return new Promise((resolve, reject) => {
+  const startGame = useCallback(() =>
+    new Promise((resolve, reject) => {
       socketRef.current.emit("game:start", null, (res) => {
         if (res?.error) return reject(new Error(res.error));
         resolve(res);
       });
-    });
-  }, []);
+    }), []);
 
-  const submitAnswer = useCallback((answer) => {
-    return new Promise((resolve, reject) => {
+  const submitAnswer = useCallback((answer) =>
+    new Promise((resolve, reject) => {
       socketRef.current.emit("phase:submit", { answer }, (res) => {
         if (res?.error) return reject(new Error(res.error));
         dispatch({ type: "ANSWER_SUBMITTED" });
         resolve(res);
       });
-    });
-  }, []);
+    }), []);
 
-  const submitVote = useCallback((stars) => {
-    return new Promise((resolve, reject) => {
+  const submitVote = useCallback((stars) =>
+    new Promise((resolve, reject) => {
       socketRef.current.emit("review:vote", { stars }, (res) => {
         if (res?.error) return reject(new Error(res.error));
         dispatch({ type: "VOTE_SUBMITTED" });
         resolve(res);
       });
-    });
-  }, []);
+    }), []);
 
-  return {
-    ...state,
-    createRoom,
-    joinRoom,
-    startGame,
-    submitAnswer,
-    submitVote,
-  };
+  return { ...state, createRoom, joinRoom, startGame, submitAnswer, submitVote };
 }
